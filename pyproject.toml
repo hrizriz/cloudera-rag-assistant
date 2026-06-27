@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cloudera-llm"
+version = "0.1.0"
+description = "RAG assistant for Cloudera documentation powered by gemini-web2api"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "chromadb>=0.5.0",
+    "sentence-transformers>=3.0.0",
+    "openai>=1.40.0",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "httpx>=0.27.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    "pyyaml>=6.0.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-docx>=1.1.0",
+    "openpyxl>=3.1.0",
+    "pypdf>=5.0.0",
+    "python-telegram-bot>=21.0",
+]
+
+[project.scripts]
+cloudera-ingest = "cloudera_llm.cli.ingest:main"
+cloudera-catalog = "cloudera_llm.cli.catalog:main"
+cloudera-chat = "cloudera_llm.cli.chat:main"
+cloudera-serve = "cloudera_llm.api.main:serve"
+cloudera-telegram = "cloudera_llm.cli.telegram:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+data/chroma/
+data/raw/
+data/*
+!data/.gitkeep
+gemini-web2api/
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

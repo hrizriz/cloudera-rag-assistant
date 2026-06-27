@@ -1,0 +1,51 @@
+llm:
+  base_url: "http://127.0.0.1:8081/v1"
+  api_key: "sk-anything"
+  model: "gemini-3.5-flash"
+  timeout_sec: 180
+
+embedding:
+  model: "sentence-transformers/all-MiniLM-L6-v2"
+
+vectorstore:
+  path: "./data/chroma"
+  collection: "cloudera_docs"
+  top_k: 5
+
+rag:
+  chunk_size: 800
+  chunk_overlap: 150
+  max_context_chars: 12000
+
+ingestion:
+  # sitemap = official full index | crawl = follow links | both = combine
+  mode: sitemap
+  sitemap_index_url: "https://docs.cloudera.com/sitemap.xml"
+  # Empty include = all products. Examples: runtime, cdp-public-cloud, data-warehouse
+  sitemap_include: []
+  sitemap_exclude: []
+  seed_urls:
+    - "https://docs.cloudera.com/cdp-public-cloud/cloud/index.html"
+    - "https://docs.cloudera.com/runtime/7.3.2/impala-overview/topics/impala-overview.html"
+  allowed_domains:
+    - "docs.cloudera.com"
+  # 0 = no limit (use with resume for long runs)
+  max_pages: 0
+  max_crawl_discover: 500
+  delay_seconds: 2.5
+  delay_jitter_seconds: 2.0
+  retry_attempts: 5
+  retry_backoff_seconds: 5.0
+  cooldown_on_429_seconds: 90.0
+  rotate_user_agent: true
+  warmup_url: "https://docs.cloudera.com/"
+  resume: true
+  prioritize_support_matrix: true
+  proxy: null
+  local_data_dir: "./data"
+  local_extensions:
+    - ".docx"
+    - ".pdf"
+    - ".xlsx"
+    - ".xlsm"
+    - ".zip"
