@@ -13,6 +13,8 @@ from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandl
 from cloudera_llm.config import get_telegram_settings
 from cloudera_llm.llm.client import LLMClient
 from cloudera_llm.rag.pipeline import RAGPipeline
+from cloudera_llm.telegram.formatter import format_telegram_answer
+from cloudera_llm.telegram.prompts import TELEGRAM_SYSTEM_PROMPT
 from cloudera_llm.vectorstore.store import VectorStore
 
 logger = logging.getLogger(__name__)
@@ -62,27 +64,6 @@ def _split_message(text: str, limit: int = TELEGRAM_MESSAGE_LIMIT) -> list[str]:
     return parts
 
 
-def _format_answer(result) -> str:
-    lines = [html.escape(result.answer.strip()), "", "<b>Sumber:</b>"]
-    for index, source in enumerate(result.sources[:5], start=1):
-        label = html.escape(source.title or "Untitled")
-        meta = []
-        if source.product:
-            meta.append(html.escape(source.product))
-        if source.version:
-            meta.append(html.escape(source.version))
-        if source.service:
-            meta.append(html.escape(source.service))
-        meta_text = f" ({', '.join(meta)})" if meta else ""
-        url = source.source_url
-        if url.startswith("http"):
-            lines.append(f'{index}. <a href="{html.escape(url, quote=True)}">{label}</a>{meta_text}')
-        else:
-            lines.append(f"{index}. {label}{meta_text}")
-    lines.append(f"\n<i>Model: {html.escape(result.model)}</i>")
-    return "\n".join(lines)
-
-
 async def _reply(update: Update, text: str) -> None:
     if update.message is None:
         return
@@ -103,12 +84,17 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     await update.message.reply_text(
-        "Halo! Saya <b>Cloudera LLM Assistant</b>.\n\n"
-        "Kirim pertanyaan seputar Cloudera (CDP, Impala, Hive, CDW, CDE, CML, NiFi, dll).\n\n"
-        "Perintah:\n"
-        "/health — cek status knowledge base &amp; LLM\n"
-        "/ask &lt;pertanyaan&gt; — tanya Cloudera\n\n"
-        "Atau langsung ketik pertanyaanmu.",
+        "<b>Cloudera Assistant</b>\n"
+        "<i>Enterprise RAG · Docs &amp; Runbook</i>\n\n"
+        "Asisten untuk pertanyaan seputar Cloudera Platform, Data Services, "
+        "dan prosedur operasional (SOP/MOP).\n\n"
+        "<b>Perintah</b>\n"
+        "/health — status knowledge base &amp; LLM\n"
+        "/ask &lt;pertanyaan&gt; — ajukan pertanyaan\n\n"
+        "<b>Contoh</b>\n"
+        "<code>/ask langkah restart Impala services</code>\n"
+        "<code>/ask support matrix CDW untuk RHEL 9</code>\n\n"
+        "Atau ketik pertanyaan langsung. Jawaban disertai referensi sumber.",
         parse_mode=ParseMode.HTML,
     )
 
@@ -118,12 +104,17 @@ async def health_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         await _reply_unauthorized(update)
         return
 
+    store = VectorStore()
     llm = LLMClient()
+    llm_ok = llm.health_check()
+    status = "Operational" if llm_ok and store.count() > 0 else "Degraded"
+
     text = (
-        "<b>Status Cloudera LLM</b>\n\n"
-        f"Vectors: <code>{store.count()}</code>\n"
-        f"LLM reachable: <code>{'yes' if llm.health_check() else 'no'}</code>\n"
-        f"gemini-web2api: <code>{html.escape(llm.config.llm.base_url)}</code>"
+        "<b>Cloudera Assistant — Health Check</b>\n\n"
+        f"Status: <code>{status}</code>\n"
+        f"Knowledge vectors: <code>{store.count()}</code>\n"
+        f"LLM backend: <code>{'reachable' if llm_ok else 'unreachable'}</code>\n"
+        f"Endpoint: <code>{html.escape(llm.config.llm.base_url)}</code>"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
@@ -135,7 +126,11 @@ async def ask_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
     question = " ".join(context.args).strip()
     if not question:
-        await update.message.reply_text("Format: /ask Apa perbedaan Impala dan Hive?")
+        await update.message.reply_text(
+            "Format: <code>/ask &lt;pertanyaan&gt;</code>\n"
+            "Contoh: <code>/ask cara failover HDFS dan YARN</code>",
+            parse_mode=ParseMode.HTML,
+        )
         return
     await _handle_question(update, question)
 
@@ -160,27 +155,44 @@ async def _handle_question(update: Update, question: str) -> None:
     pipeline = _get_pipeline()
     if pipeline.store.count() == 0:
         await update.message.reply_text(
-            "Knowledge base masih kosong. Jalankan ingest dulu:\n"
-            "`cloudera-ingest --source all`",
-            parse_mode=ParseMode.MARKDOWN,
+            "<b>Knowledge base belum tersedia</b>\n\n"
+            "Jalankan ingest terlebih dahulu:\n"
+            "<code>cloudera-ingest --source all</code>",
+            parse_mode=ParseMode.HTML,
         )
         return
 
     if not pipeline.llm.health_check():
         await update.message.reply_text(
-            "LLM tidak reachable. Pastikan gemini-web2api jalan di 127.0.0.1:8081 "
-            "(jangan pakai localhost — bisa kena service lain di Windows)."
+            "<b>LLM backend tidak tersedia</b>\n\n"
+            "Pastikan gemini-web2api berjalan di:\n"
+            "<code>http://127.0.0.1:8081/v1</code>",
+            parse_mode=ParseMode.HTML,
         )
         return
 
     await update.message.chat.send_action(ChatAction.TYPING)
 
     try:
-        result = await asyncio.to_thread(pipeline.ask, question)
-        await _reply(update, _format_answer(result))
+        result = await asyncio.to_thread(
+            pipeline.ask,
+            question,
+            system_prompt=TELEGRAM_SYSTEM_PROMPT,
+        )
+        formatted = format_telegram_answer(
+            result.answer,
+            result.sources,
+            model=result.model,
+        )
+        await _reply(update, formatted.html)
     except Exception as exc:
         logger.exception("Telegram RAG failed")
-        await update.message.reply_text(f"Error: {exc}")
+        await update.message.reply_text(
+            "<b>Permintaan tidak dapat diproses</b>\n\n"
+            f"Detail: <code>{html.escape(str(exc))}</code>\n\n"
+            "Silakan coba lagi atau hubungi administrator.",
+            parse_mode=ParseMode.HTML,
+        )
 
 
 async def _reply_unauthorized(update: Update) -> None:
@@ -188,8 +200,10 @@ async def _reply_unauthorized(update: Update) -> None:
         return
     chat_id = update.effective_chat.id if update.effective_chat else "unknown"
     await update.message.reply_text(
-        f"Chat ID <code>{chat_id}</code> belum diizinkan.\n"
-        "Tambahkan ke <code>TELEGRAM_ALLOWED_CHAT_IDS</code> di file <code>.env</code>.",
+        "<b>Akses ditolak</b>\n\n"
+        f"Chat ID <code>{chat_id}</code> belum terdaftar.\n"
+        "Hubungi administrator untuk menambahkan ke "
+        "<code>TELEGRAM_ALLOWED_CHAT_IDS</code>.",
         parse_mode=ParseMode.HTML,
     )
 

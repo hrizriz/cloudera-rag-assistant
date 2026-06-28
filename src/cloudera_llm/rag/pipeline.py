@@ -83,10 +83,16 @@ class RAGPipeline:
             "total_vectors": self.store.count(),
         }
 
-    def ask(self, question: str, *, top_k: int | None = None) -> RAGAnswer:
+    def ask(
+        self,
+        question: str,
+        *,
+        top_k: int | None = None,
+        system_prompt: str | None = None,
+    ) -> RAGAnswer:
         chunks = self.store.query(question, top_k=top_k)
         context = _format_context(chunks, max_chars=self.config.rag.max_context_chars)
-        response: LLMResponse = self.llm.chat(question, context)
+        response: LLMResponse = self.llm.chat(question, context, system_prompt=system_prompt)
         return RAGAnswer(answer=response.content, sources=chunks, model=response.model)
 
 

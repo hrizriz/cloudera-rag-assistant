@@ -35,7 +35,14 @@ class LLMClient:
             timeout=self.config.llm.timeout_sec,
         )
 
-    def chat(self, question: str, context: str, *, system_prompt: str = SYSTEM_PROMPT) -> LLMResponse:
+    def chat(
+        self,
+        question: str,
+        context: str,
+        *,
+        system_prompt: str | None = None,
+    ) -> LLMResponse:
+        prompt = system_prompt or SYSTEM_PROMPT
         user_message = (
             "Use the following Cloudera documentation excerpts to answer the question.\n\n"
             f"Context:\n{context}\n\n"
@@ -45,7 +52,7 @@ class LLMClient:
         response = self.client.chat.completions.create(
             model=self.config.llm.model,
             messages=[
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": prompt},
                 {"role": "user", "content": user_message},
             ],
         )
